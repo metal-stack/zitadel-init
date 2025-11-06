@@ -25,6 +25,8 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 
 	authOption := client.PAT(token)
 
+	log.Print("initializing zitadel application...")
+
 	api, err := client.New(ctx, zitadel.New(domain, zitadel.WithPort(port), zitadel.WithInsecureSkipVerifyTLS()), client.WithAuth(authOption))
 	if err != nil {
 		return fmt.Errorf("unable to create API client: %w", err)
@@ -70,6 +72,11 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	log.Printf("successfully created application: %s", resp.AppId)
+
+	oidc := resp.GetOidcResponse()
+	if oidc == nil {
+		return fmt.Errorf("no oidc response found in app creation response")
+	}
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
