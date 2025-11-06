@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/urfave/cli/v3"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
@@ -20,6 +21,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	token := cmd.String(zitadelPAT.Name)
 	port := cmd.Uint16(zitadelPort.Name)
 	namespace := cmd.String(secretNamespace.Name)
+	secretName := cmd.String(secretName.Name)
 
 	authOption := client.PAT(token)
 
@@ -67,7 +69,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("unable to create application: %w", err)
 	}
 
-	fmt.Printf("successfully created application: %s", resp.AppId)
+	log.Printf("successfully created application: %s", resp.AppId)
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -81,11 +83,8 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 
 	secret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "zitadel-client-credentials",
+			Name:      secretName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "zitadel-init-job",
-			},
 		},
 		StringData: map[string]string{
 			"client_id":     resp.GetOidcResponse().GetClientId(),
@@ -99,7 +98,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("unable to save credentials in secret: %w", err)
 	}
 
-	fmt.Printf("sucessfully created zitadel-client-credentials")
+	log.Printf("sucessfully created zitadel-client-credentials")
 
 	return nil
 }

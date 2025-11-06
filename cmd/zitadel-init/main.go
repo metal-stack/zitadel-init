@@ -28,6 +28,11 @@ var (
 		Value: "metal-control-plane",
 		Usage: "Namespace for the client secret",
 	}
+	secretName = &cli.StringFlag{
+		Name:  "secret",
+		Value: "zitadel-client-credentials",
+		Usage: "Namespace for the client secret",
+	}
 )
 
 func main() {
@@ -39,6 +44,7 @@ func main() {
 			zitadelPAT,
 			zitadelPort,
 			secretNamespace,
+			secretName,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			return runInit(ctx, c)
