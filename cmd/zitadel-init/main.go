@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 
 	"github.com/urfave/cli/v3"
@@ -51,5 +52,7 @@ func main() {
 		},
 	}
 
-	init.Run(context.Background(), os.Args)
+	if err := init.Run(context.Background(), os.Args); err != nil {
+		log.Fatal(err)
+	}
 }
