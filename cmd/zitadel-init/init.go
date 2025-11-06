@@ -88,8 +88,8 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 			},
 		},
 		StringData: map[string]string{
-			"client_id":     resp.GetApiResponse().ClientId,
-			"client_secret": resp.GetApiResponse().ClientSecret,
+			"client_id":     resp.GetOidcResponse().GetClientId(),
+			"client_secret": resp.GetOidcResponse().GetClientSecret(),
 		},
 		Type: v1.SecretTypeOpaque,
 	}
