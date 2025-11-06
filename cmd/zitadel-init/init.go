@@ -71,6 +71,11 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 
 	log.Printf("successfully created application: %s", resp.AppId)
 
+	oidc := resp.GetOidcResponse()
+	if oidc == nil {
+		return fmt.Errorf("no oidc response found in app creation response")
+	}
+
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		return fmt.Errorf("unable to get in-cluster config: %w", err)
