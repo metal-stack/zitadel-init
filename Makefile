@@ -22,7 +22,7 @@ LINKMODE := $(LINKMODE) \
 all: zitadel-init
 
 .PHONY: zitadel-init
-cli:
+zitadel-init:
 	go build \
 		$(TAGS) \
 		-ldflags \
