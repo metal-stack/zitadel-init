@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/urfave/cli/v3"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
@@ -17,17 +18,29 @@ import (
 )
 
 func runInit(ctx context.Context, cmd *cli.Command) error {
-	domain := cmd.String(zitadelEndpoint.Name)
-	token := cmd.String(zitadelPAT.Name)
-	port := cmd.Uint16(zitadelPort.Name)
-	namespace := cmd.String(secretNamespace.Name)
-	secretName := cmd.String(secretName.Name)
+	var (
+		domain        = cmd.String(zitadelEndpoint.Name)
+		token         = cmd.String(zitadelPAT.Name)
+		port          = cmd.Uint16(zitadelPort.Name)
+		skipVerifyTLS = cmd.Bool(zitadelSkipVerifyTLS.Name)
+		insecure      = cmd.Bool(zitadelInsecure.Name)
+		namespace     = cmd.String(secretNamespace.Name)
+		secretName    = cmd.String(secretName.Name)
 
-	authOption := client.PAT(token)
+		authOption = client.PAT(token)
+		opts       = []zitadel.Option{zitadel.WithPort(port)}
+	)
 
 	log.Print("initializing zitadel application...")
 
-	api, err := client.New(ctx, zitadel.New(domain, zitadel.WithPort(port), zitadel.WithInsecureSkipVerifyTLS()), client.WithAuth(authOption))
+	if skipVerifyTLS {
+		opts = append(opts, zitadel.WithInsecureSkipVerifyTLS())
+	}
+	if insecure {
+		opts = append(opts, zitadel.WithInsecure(strconv.Itoa(int(port))))
+	}
+
+	api, err := client.New(ctx, zitadel.New(domain, opts...), client.WithAuth(authOption))
 	if err != nil {
 		return fmt.Errorf("unable to create API client: %w", err)
 	}
@@ -105,7 +118,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("unable to save credentials in secret: %w", err)
 	}
 
-	log.Printf("sucessfully created zitadel-client-credentials")
+	log.Printf("successfully created zitadel-client-credentials")
 
 	return nil
 }

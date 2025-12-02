@@ -24,6 +24,16 @@ var (
 		Value: 4443,
 		Usage: "Zitadel server port",
 	}
+	zitadelSkipVerifyTLS = &cli.BoolFlag{
+		Name:  "zitadel-skip-verify-tls",
+		Value: false,
+		Usage: "Allows to connect to an instance running with TLS but has an untrusted certificate",
+	}
+	zitadelInsecure = &cli.BoolFlag{
+		Name:  "zitadel-insecure",
+		Value: false,
+		Usage: "allows to connect to an instance running without TLS, do not use in production",
+	}
 	secretNamespace = &cli.StringFlag{
 		Name:  "namespace",
 		Value: "metal-control-plane",
@@ -44,6 +54,8 @@ func main() {
 			zitadelEndpoint,
 			zitadelPAT,
 			zitadelPort,
+			zitadelSkipVerifyTLS,
+			zitadelInsecure,
 			secretNamespace,
 			secretName,
 		},
