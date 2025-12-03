@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -56,7 +57,7 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 
 		err = c.Get(ctx, ctrlclient.ObjectKeyFromObject(&patSecret), &patSecret)
 		if err == nil {
-			pat = string(patSecret.Data["pat"])
+			pat = strings.TrimSpace(string(patSecret.Data["pat"]))
 			break
 		}
 
