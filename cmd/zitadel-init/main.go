@@ -68,5 +68,6 @@ func main() {
 
 	if err := init.Run(context.Background(), os.Args); err != nil {
 		log.Error("error running init, shutting down", "error", err)
+		os.Exit(1)
 	}
 }
