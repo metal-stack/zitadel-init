@@ -14,10 +14,10 @@ var (
 		Value: "zitadel.172.17.0.1.nip.io",
 		Usage: "Zitadel server address",
 	}
-	zitadelPAT = &cli.StringFlag{
-		Name:  "zitadel-pat",
-		Value: "your-personal-access-token",
-		Usage: "Zitadel personal access token",
+	zitadelCredentialsSecretName = &cli.StringFlag{
+		Name:  "zitadel-credentials-secret-name",
+		Value: "iam-admin-pat",
+		Usage: "the secret name containing the pat credentials",
 	}
 	zitadelPort = &cli.Uint16Flag{
 		Name:  "zitadel-port",
@@ -52,7 +52,7 @@ func main() {
 		Usage: "Initialize Zitadel with required applications",
 		Flags: []cli.Flag{
 			zitadelEndpoint,
-			zitadelPAT,
+			zitadelCredentialsSecretName,
 			zitadelPort,
 			zitadelSkipVerifyTLS,
 			zitadelInsecure,

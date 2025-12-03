@@ -5,31 +5,72 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
 	app "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/app/v2beta"
 	project "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/project/v2beta"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func runInit(ctx context.Context, cmd *cli.Command) error {
 	var (
 		domain        = cmd.String(zitadelEndpoint.Name)
-		token         = cmd.String(zitadelPAT.Name)
+		patSecretName = cmd.String(zitadelCredentialsSecretName.Name)
 		port          = cmd.Uint16(zitadelPort.Name)
 		skipVerifyTLS = cmd.Bool(zitadelSkipVerifyTLS.Name)
 		insecure      = cmd.Bool(zitadelInsecure.Name)
 		namespace     = cmd.String(secretNamespace.Name)
 		secretName    = cmd.String(secretName.Name)
 
-		authOption = client.PAT(token)
-		opts       = []zitadel.Option{zitadel.WithPort(port)}
+		opts = []zitadel.Option{zitadel.WithPort(port)}
 	)
+
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return fmt.Errorf("unable to get in-cluster config: %w", err)
+	}
+
+	c, err := ctrlclient.New(config, ctrlclient.Options{})
+	if err != nil {
+		return fmt.Errorf("unable to create kubernetes client: %w", err)
+	}
+
+	log.Print("waiting for pat secret to come into existence...")
+
+	var pat string
+
+	for {
+		patSecret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      patSecretName,
+				Namespace: namespace,
+			},
+		}
+
+		err = c.Get(ctx, ctrlclient.ObjectKeyFromObject(&patSecret), &patSecret)
+		if err == nil {
+			pat = string(patSecret.Data["pat"])
+			break
+		}
+
+		if apierrors.IsNotFound(err) {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		return fmt.Errorf("error retrieving pat secret: %w", err)
+	}
+
+	if pat == "" {
+		return fmt.Errorf("pat secret is empty")
+	}
 
 	log.Print("initializing zitadel application...")
 
@@ -40,7 +81,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		opts = append(opts, zitadel.WithInsecure(strconv.Itoa(int(port))))
 	}
 
-	api, err := client.New(ctx, zitadel.New(domain, opts...), client.WithAuth(authOption))
+	api, err := client.New(ctx, zitadel.New(domain, opts...), client.WithAuth(client.PAT(pat)))
 	if err != nil {
 		return fmt.Errorf("unable to create API client: %w", err)
 	}
@@ -91,17 +132,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("no oidc response found in app creation response")
 	}
 
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("unable to get in-cluster config: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("unable to create kubernetes clientset: %w", err)
-	}
-
-	secret := &v1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: namespace,
@@ -110,10 +141,10 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 			"client_id":     resp.GetOidcResponse().GetClientId(),
 			"client_secret": resp.GetOidcResponse().GetClientSecret(),
 		},
-		Type: v1.SecretTypeOpaque,
+		Type: corev1.SecretTypeOpaque,
 	}
 
-	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	err = c.Create(ctx, secret)
 	if err != nil {
 		return fmt.Errorf("unable to save credentials in secret: %w", err)
 	}
