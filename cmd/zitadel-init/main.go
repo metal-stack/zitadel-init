@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/urfave/cli/v3"
@@ -47,6 +47,8 @@ var (
 )
 
 func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
 	init := &cli.Command{
 		Name:  "zitadel-init",
 		Usage: "Initialize Zitadel with required applications",
@@ -60,11 +62,11 @@ func main() {
 			secretName,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			return runInit(ctx, c)
+			return runInit(ctx, c, log)
 		},
 	}
 
 	if err := init.Run(context.Background(), os.Args); err != nil {
-		log.Fatal(err)
+		log.Error("error running init, shutting down", "error", err)
 	}
 }

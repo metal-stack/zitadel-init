@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -19,7 +19,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func runInit(ctx context.Context, cmd *cli.Command) error {
+func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 	var (
 		domain        = cmd.String(zitadelEndpoint.Name)
 		patSecretName = cmd.String(zitadelCredentialsSecretName.Name)
@@ -42,7 +42,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("unable to create kubernetes client: %w", err)
 	}
 
-	log.Print("waiting for pat secret to come into existence...")
+	log.Info("waiting for pat secret to come into existence...")
 
 	var pat string
 
@@ -72,7 +72,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("pat secret is empty")
 	}
 
-	log.Print("initializing zitadel application...")
+	log.Info("initializing zitadel application...")
 
 	if skipVerifyTLS {
 		opts = append(opts, zitadel.WithInsecureSkipVerifyTLS())
@@ -125,7 +125,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("unable to create application: %w", err)
 	}
 
-	log.Printf("successfully created application: %s", resp.AppId)
+	log.Info("successfully created application", "app-id", resp.AppId)
 
 	oidc := resp.GetOidcResponse()
 	if oidc == nil {
@@ -149,7 +149,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("unable to save credentials in secret: %w", err)
 	}
 
-	log.Printf("successfully created zitadel-client-credentials")
+	log.Info("successfully created zitadel-client-credentials")
 
 	return nil
 }
