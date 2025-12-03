@@ -44,6 +44,11 @@ var (
 		Value: "zitadel-client-credentials",
 		Usage: "Namespace for the client secret",
 	}
+	initialUsersSecretName = &cli.StringFlag{
+		Name:  "initial-users-secret-name",
+		Value: "zitadel-static-users",
+		Usage: "the secret name containing the static users to create",
+	}
 )
 
 func main() {

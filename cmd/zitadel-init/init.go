@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
 	app "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/app/v2beta"
 	project "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/project/v2beta"
+	zitadeluser "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,15 +22,24 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type user struct {
+	OrgID     string `json:"org_id"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+}
+
 func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 	var (
-		domain        = cmd.String(zitadelEndpoint.Name)
-		patSecretName = cmd.String(zitadelCredentialsSecretName.Name)
-		port          = cmd.Uint16(zitadelPort.Name)
-		skipVerifyTLS = cmd.Bool(zitadelSkipVerifyTLS.Name)
-		insecure      = cmd.Bool(zitadelInsecure.Name)
-		namespace     = cmd.String(secretNamespace.Name)
-		secretName    = cmd.String(secretName.Name)
+		domain          = cmd.String(zitadelEndpoint.Name)
+		patSecretName   = cmd.String(zitadelCredentialsSecretName.Name)
+		usersSecretName = cmd.String(zitadelCredentialsSecretName.Name)
+		port            = cmd.Uint16(zitadelPort.Name)
+		skipVerifyTLS   = cmd.Bool(zitadelSkipVerifyTLS.Name)
+		insecure        = cmd.Bool(zitadelInsecure.Name)
+		namespace       = cmd.String(secretNamespace.Name)
+		secretName      = cmd.String(secretName.Name)
 
 		opts = []zitadel.Option{zitadel.WithPort(port)}
 	)
@@ -131,6 +142,45 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 	oidc := resp.GetOidcResponse()
 	if oidc == nil {
 		return fmt.Errorf("no oidc response found in app creation response")
+	}
+
+	usersSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      usersSecretName,
+			Namespace: namespace,
+		},
+	}
+
+	err = c.Get(ctx, ctrlclient.ObjectKeyFromObject(&usersSecret), &usersSecret)
+	if err == nil {
+		var users []user
+		err = json.Unmarshal(usersSecret.Data["users"], &users)
+		if err != nil {
+			return fmt.Errorf("unable to parse users: %w", err)
+		}
+
+		for _, u := range users {
+			api.UserServiceV2().CreateUser(ctx, &zitadeluser.CreateUserRequest{
+				OrganizationId: u.OrgID,
+				UserType: &zitadeluser.CreateUserRequest_Human_{
+					Human: &zitadeluser.CreateUserRequest_Human{
+						Profile: &zitadeluser.SetHumanProfile{
+							GivenName:  u.FirstName,
+							FamilyName: u.LastName,
+						},
+						Email: &zitadeluser.SetHumanEmail{
+							Email: u.Email,
+						},
+						PasswordType: &zitadeluser.CreateUserRequest_Human_Password{
+							Password: &zitadeluser.Password{
+								Password:       u.Password,
+								ChangeRequired: false,
+							},
+						},
+					},
+				},
+			})
+		}
 	}
 
 	secret := &corev1.Secret{
