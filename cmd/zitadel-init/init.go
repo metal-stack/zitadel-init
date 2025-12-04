@@ -144,13 +144,13 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 func createInitUsers(ctx context.Context, log *slog.Logger, usersPath string, zitadelClient *client.Client) error {
 	usersFile, err := os.Open(usersPath)
 	if err != nil {
-		return fmt.Errorf("unable to open users.json at %s: %w", usersPath, err)
+		return fmt.Errorf("unable to open users file at %s: %w", usersPath, err)
 	}
 	defer usersFile.Close()
 
 	usersData, err := io.ReadAll(usersFile)
 	if err != nil {
-		return fmt.Errorf("unable to read users.json: %w", err)
+		return fmt.Errorf("unable to read users file: %w", err)
 	}
 
 	var users []user
