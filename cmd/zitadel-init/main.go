@@ -47,7 +47,7 @@ var (
 	initialUsersPath = &cli.StringFlag{
 		Name:  "initial-users-path",
 		Value: "",
-		Usage: "path of the init users.yaml",
+		Usage: "path of the init users.json",
 	}
 )
 
