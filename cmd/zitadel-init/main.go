@@ -12,22 +12,22 @@ var (
 	zitadelEndpoint = &cli.StringFlag{
 		Name:  "zitadel-endpoint",
 		Value: "zitadel.172.17.0.1.nip.io",
-		Usage: "Zitadel server address",
+		Usage: "zitadel server address",
 	}
-	zitadelCredentialsSecretName = &cli.StringFlag{
-		Name:  "zitadel-credentials-secret-name",
-		Value: "iam-admin-pat",
-		Usage: "the secret name containing the pat credentials",
+	zitadelPAT = &cli.StringFlag{
+		Name:  "zitadel-pat",
+		Value: "your-personal-access-token",
+		Usage: "personal access token for Zitadel",
 	}
 	zitadelPort = &cli.Uint16Flag{
 		Name:  "zitadel-port",
 		Value: 4443,
-		Usage: "Zitadel server port",
+		Usage: "zitadel server port",
 	}
 	zitadelSkipVerifyTLS = &cli.BoolFlag{
 		Name:  "zitadel-skip-verify-tls",
 		Value: false,
-		Usage: "Allows to connect to an instance running with TLS but has an untrusted certificate",
+		Usage: "allows to connect to an instance running with TLS but has an untrusted certificate",
 	}
 	zitadelInsecure = &cli.BoolFlag{
 		Name:  "zitadel-insecure",
@@ -37,17 +37,17 @@ var (
 	secretNamespace = &cli.StringFlag{
 		Name:  "namespace",
 		Value: "metal-control-plane",
-		Usage: "Namespace for the client secret",
+		Usage: "namespace for the client secret",
 	}
 	secretName = &cli.StringFlag{
 		Name:  "secret",
 		Value: "zitadel-client-credentials",
-		Usage: "Namespace for the client secret",
+		Usage: "namespace for the client secret",
 	}
-	initialUsersSecretName = &cli.StringFlag{
-		Name:  "initial-users-secret-name",
-		Value: "zitadel-static-users",
-		Usage: "the secret name containing the static users to create",
+	initialUsersPath = &cli.StringFlag{
+		Name:  "initial-users-path",
+		Value: "",
+		Usage: "path of the init users.yaml",
 	}
 )
 
@@ -59,7 +59,7 @@ func main() {
 		Usage: "Initialize Zitadel with required applications",
 		Flags: []cli.Flag{
 			zitadelEndpoint,
-			zitadelCredentialsSecretName,
+			zitadelPAT,
 			zitadelPort,
 			zitadelSkipVerifyTLS,
 			zitadelInsecure,

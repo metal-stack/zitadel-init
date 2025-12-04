@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/urfave/cli/v3"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
@@ -16,7 +16,6 @@ import (
 	zitadeluser "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,58 +31,17 @@ type user struct {
 
 func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 	var (
-		domain          = cmd.String(zitadelEndpoint.Name)
-		patSecretName   = cmd.String(zitadelCredentialsSecretName.Name)
-		usersSecretName = cmd.String(zitadelCredentialsSecretName.Name)
-		port            = cmd.Uint16(zitadelPort.Name)
-		skipVerifyTLS   = cmd.Bool(zitadelSkipVerifyTLS.Name)
-		insecure        = cmd.Bool(zitadelInsecure.Name)
-		namespace       = cmd.String(secretNamespace.Name)
-		secretName      = cmd.String(secretName.Name)
+		domain        = cmd.String(zitadelEndpoint.Name)
+		port          = cmd.Uint16(zitadelPort.Name)
+		skipVerifyTLS = cmd.Bool(zitadelSkipVerifyTLS.Name)
+		insecure      = cmd.Bool(zitadelInsecure.Name)
+		namespace     = cmd.String(secretNamespace.Name)
+		secretName    = cmd.String(secretName.Name)
+		pat           = cmd.String(zitadelPAT.Name)
+		usersPath     = cmd.String(initialUsersPath.Name)
 
 		opts = []zitadel.Option{zitadel.WithPort(port)}
 	)
-
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("unable to get in-cluster config: %w", err)
-	}
-
-	c, err := ctrlclient.New(config, ctrlclient.Options{})
-	if err != nil {
-		return fmt.Errorf("unable to create kubernetes client: %w", err)
-	}
-
-	log.Info("waiting for pat secret to come into existence...")
-
-	var pat string
-
-	for {
-		patSecret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      patSecretName,
-				Namespace: namespace,
-			},
-		}
-
-		err = c.Get(ctx, ctrlclient.ObjectKeyFromObject(&patSecret), &patSecret)
-		if err == nil {
-			pat = strings.TrimSpace(string(patSecret.Data["pat"]))
-			break
-		}
-
-		if apierrors.IsNotFound(err) {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		return fmt.Errorf("error retrieving pat secret: %w", err)
-	}
-
-	if pat == "" {
-		return fmt.Errorf("pat secret is empty")
-	}
-
 	log.Info("initializing zitadel application...")
 
 	if skipVerifyTLS {
@@ -93,12 +51,12 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 		opts = append(opts, zitadel.WithInsecure(strconv.Itoa(int(port))))
 	}
 
-	api, err := client.New(ctx, zitadel.New(domain, opts...), client.WithAuth(client.PAT(pat)))
+	zitadelClient, err := client.New(ctx, zitadel.New(domain, opts...), client.WithAuth(client.PAT(pat)))
 	if err != nil {
 		return fmt.Errorf("unable to create API client: %w", err)
 	}
 
-	projectResp, err := api.ProjectServiceV2Beta().ListProjects(ctx, &project.ListProjectsRequest{})
+	projectResp, err := zitadelClient.ProjectServiceV2Beta().ListProjects(ctx, &project.ListProjectsRequest{})
 	if err != nil {
 		return fmt.Errorf("unable to list projects: %w", err)
 	}
@@ -109,7 +67,7 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 	}
 	projectId := projectResp.Projects[0].Id
 
-	resp, err := api.AppServiceV2Beta().CreateApplication(ctx, &app.CreateApplicationRequest{
+	resp, err := zitadelClient.AppServiceV2Beta().CreateApplication(ctx, &app.CreateApplicationRequest{
 		ProjectId: projectId,
 		Name:      "metal-stack",
 		Id:        "metal-stack",
@@ -144,43 +102,21 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 		return fmt.Errorf("no oidc response found in app creation response")
 	}
 
-	usersSecret := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      usersSecretName,
-			Namespace: namespace,
-		},
+	if usersPath != "" {
+		err = createInitUsers(ctx, log, usersPath, zitadelClient)
+		if err != nil {
+			return fmt.Errorf("unable to create inti users: %w", err)
+		}
 	}
 
-	err = c.Get(ctx, ctrlclient.ObjectKeyFromObject(&usersSecret), &usersSecret)
-	if err == nil {
-		var users []user
-		err = json.Unmarshal(usersSecret.Data["users"], &users)
-		if err != nil {
-			return fmt.Errorf("unable to parse users: %w", err)
-		}
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return fmt.Errorf("unable to get in-cluster config: %w", err)
+	}
 
-		for _, u := range users {
-			api.UserServiceV2().CreateUser(ctx, &zitadeluser.CreateUserRequest{
-				OrganizationId: u.OrgID,
-				UserType: &zitadeluser.CreateUserRequest_Human_{
-					Human: &zitadeluser.CreateUserRequest_Human{
-						Profile: &zitadeluser.SetHumanProfile{
-							GivenName:  u.FirstName,
-							FamilyName: u.LastName,
-						},
-						Email: &zitadeluser.SetHumanEmail{
-							Email: u.Email,
-						},
-						PasswordType: &zitadeluser.CreateUserRequest_Human_Password{
-							Password: &zitadeluser.Password{
-								Password:       u.Password,
-								ChangeRequired: false,
-							},
-						},
-					},
-				},
-			})
-		}
+	c, err := ctrlclient.New(config, ctrlclient.Options{})
+	if err != nil {
+		return fmt.Errorf("unable to create kubernetes client: %w", err)
 	}
 
 	secret := &corev1.Secret{
@@ -201,6 +137,52 @@ func runInit(ctx context.Context, cmd *cli.Command, log *slog.Logger) error {
 	}
 
 	log.Info("successfully created zitadel-client-credentials")
+
+	return nil
+}
+
+func createInitUsers(ctx context.Context, log *slog.Logger, usersPath string, zitadelClient *client.Client) error {
+	usersFile, err := os.Open(usersPath)
+	if err != nil {
+		return fmt.Errorf("unable to open users.yaml at %s: %w", usersPath, err)
+	}
+	defer usersFile.Close()
+
+	usersData, err := io.ReadAll(usersFile)
+	if err != nil {
+		return fmt.Errorf("unable to read users.yaml: %w", err)
+	}
+
+	var users []user
+	err = json.Unmarshal(usersData, &users)
+	if err != nil {
+		return fmt.Errorf("unable to parse users: %w", err)
+	}
+
+	for _, u := range users {
+		zitadelClient.UserServiceV2().CreateUser(ctx, &zitadeluser.CreateUserRequest{
+			OrganizationId: u.OrgID,
+			UserType: &zitadeluser.CreateUserRequest_Human_{
+				Human: &zitadeluser.CreateUserRequest_Human{
+					Profile: &zitadeluser.SetHumanProfile{
+						GivenName:  u.FirstName,
+						FamilyName: u.LastName,
+					},
+					Email: &zitadeluser.SetHumanEmail{
+						Email: u.Email,
+					},
+					PasswordType: &zitadeluser.CreateUserRequest_Human_Password{
+						Password: &zitadeluser.Password{
+							Password:       u.Password,
+							ChangeRequired: false,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	log.Info("successfully created init userse")
 
 	return nil
 }
