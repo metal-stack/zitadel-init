@@ -2,10 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"github.com/urfave/cli/v3"
+	"github.com/zitadel/zitadel-go/v3/pkg/client"
+	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 var (
@@ -44,7 +50,7 @@ var (
 		Value: "zitadel-client-credentials",
 		Usage: "namespace for the client secret",
 	}
-	initialUsersPath = &cli.StringFlag{
+	configPath = &cli.StringFlag{
 		Name:  "initial-users-path",
 		Value: "",
 		Usage: "path of the init users.json",
@@ -65,10 +71,62 @@ func main() {
 			zitadelInsecure,
 			secretNamespace,
 			secretName,
-			initialUsersPath,
+			configPath,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			return runInit(ctx, c, log)
+			var (
+				endpoint      = c.String(zitadelEndpoint.Name)
+				port          = c.Uint16(zitadelPort.Name)
+				skipVerifyTLS = c.Bool(zitadelSkipVerifyTLS.Name)
+				insecure      = c.Bool(zitadelInsecure.Name)
+				namespace     = c.String(secretNamespace.Name)
+				secretName    = c.String(secretName.Name)
+				pat           = c.String(zitadelPAT.Name)
+				configPath    = c.String(configPath.Name)
+
+				opts = []zitadel.Option{zitadel.WithPort(port)}
+			)
+
+			zitadelConfig, err := New(log, configPath)
+			if err != nil {
+				return fmt.Errorf("unable to create zitadel config: %w", err)
+			}
+
+			config := &config{
+				pat:        pat,
+				namespace:  namespace,
+				secretName: secretName,
+			}
+
+			k8sConfig, err := ctrlconfig.GetConfig()
+			if err != nil {
+				return fmt.Errorf("unable to get kubeconfig: %w", err)
+			}
+
+			kclient, err := ctrlclient.New(k8sConfig, ctrlclient.Options{})
+			if err != nil {
+				return fmt.Errorf("unable to create kubernetes client: %w", err)
+			}
+
+			if skipVerifyTLS {
+				opts = append(opts, zitadel.WithInsecureSkipVerifyTLS())
+			}
+			if insecure {
+				opts = append(opts, zitadel.WithInsecure(strconv.Itoa(int(port))))
+			}
+
+			zitadelClient, err := client.New(ctx, zitadel.New(endpoint, opts...), client.WithAuth(client.PAT(pat)))
+			if err != nil {
+				return fmt.Errorf("unable to create API client: %w", err)
+			}
+
+			initRunner := NewInitRunner(log, config, zitadelConfig, zitadelClient, kclient)
+			err = initRunner.Run(ctx)
+			if err != nil {
+				return fmt.Errorf("unable to execute init runner: %w", err)
+			}
+
+			return nil
 		},
 	}
 
