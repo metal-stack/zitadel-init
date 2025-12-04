@@ -51,9 +51,9 @@ var (
 		Usage: "namespace for the client secret",
 	}
 	configPath = &cli.StringFlag{
-		Name:  "initial-users-path",
+		Name:  "config-path",
 		Value: "",
-		Usage: "path of the init users.json",
+		Usage: "path of the config path",
 	}
 )
 
