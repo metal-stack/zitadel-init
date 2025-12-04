@@ -29,7 +29,7 @@ zitadel-init:
 		"$(LINKMODE)" \
 		-o bin/$(BINARY) \
 		github.com/metal-stack/zitadel-init/cmd/zitadel-init
-	md5sum bin/$(BINARY) > bin/$(BINARY).md5
+	strip bin/$(BINARY)
 
 .PHONY: golint
 golint:
