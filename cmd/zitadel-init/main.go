@@ -65,6 +65,7 @@ func main() {
 			zitadelInsecure,
 			secretNamespace,
 			secretName,
+			initialUsersPath,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			return runInit(ctx, c, log)
