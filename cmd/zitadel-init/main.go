@@ -43,7 +43,7 @@ var (
 	}
 	zitadelInsecure = &cli.BoolFlag{
 		Name:  "zitadel-insecure",
-		Value: true,
+		Value: false,
 		Usage: "allows to connect to an instance running without TLS, do not use in production",
 	}
 	secretNamespace = &cli.StringFlag{
@@ -127,6 +127,8 @@ func main() {
 			if externalDomain != "" {
 				authority = externalDomain
 			}
+
+			log.Info("connecting to zitadel", "endpoint", endpoint, "port", port, "insecure", insecure, "skipVerifyTLS", skipVerifyTLS, "externalDomain", externalDomain)
 
 			zitadelClient, err := client.New(ctx, zitadel.New(endpoint, opts...), client.WithAuth(client.PAT(pat)), client.WithGRPCDialOptions(grpc.WithAuthority(authority)))
 			if err != nil {
