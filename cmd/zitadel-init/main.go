@@ -10,6 +10,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
+	"google.golang.org/grpc"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
@@ -17,8 +18,13 @@ import (
 var (
 	zitadelEndpoint = &cli.StringFlag{
 		Name:  "zitadel-endpoint",
-		Value: "zitadel.172.17.0.1.nip.io",
+		Value: "localhost",
 		Usage: "zitadel server address",
+	}
+	zitadelExternalDomain = &cli.StringFlag{
+		Name:  "zitadel-external-domain",
+		Value: "",
+		Usage: "if defined overwrites the authorization pseudo-header for the tls authorization handshake during grpc dial",
 	}
 	zitadelPAT = &cli.StringFlag{
 		Name:  "zitadel-pat",
@@ -27,7 +33,7 @@ var (
 	}
 	zitadelPort = &cli.Uint16Flag{
 		Name:  "zitadel-port",
-		Value: 4443,
+		Value: 8080,
 		Usage: "zitadel server port",
 	}
 	zitadelSkipVerifyTLS = &cli.BoolFlag{
@@ -69,20 +75,22 @@ func main() {
 			zitadelPort,
 			zitadelSkipVerifyTLS,
 			zitadelInsecure,
+			zitadelExternalDomain,
 			secretNamespace,
 			secretName,
 			configPath,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			var (
-				endpoint      = c.String(zitadelEndpoint.Name)
-				port          = c.Uint16(zitadelPort.Name)
-				skipVerifyTLS = c.Bool(zitadelSkipVerifyTLS.Name)
-				insecure      = c.Bool(zitadelInsecure.Name)
-				namespace     = c.String(secretNamespace.Name)
-				secretName    = c.String(secretName.Name)
-				pat           = c.String(zitadelPAT.Name)
-				configPath    = c.String(configPath.Name)
+				endpoint       = c.String(zitadelEndpoint.Name)
+				externalDomain = c.String(zitadelExternalDomain.Name)
+				port           = c.Uint16(zitadelPort.Name)
+				skipVerifyTLS  = c.Bool(zitadelSkipVerifyTLS.Name)
+				insecure       = c.Bool(zitadelInsecure.Name)
+				namespace      = c.String(secretNamespace.Name)
+				secretName     = c.String(secretName.Name)
+				pat            = c.String(zitadelPAT.Name)
+				configPath     = c.String(configPath.Name)
 
 				opts = []zitadel.Option{zitadel.WithPort(port)}
 			)
@@ -115,7 +123,14 @@ func main() {
 				opts = append(opts, zitadel.WithInsecure(strconv.Itoa(int(port))))
 			}
 
-			zitadelClient, err := client.New(ctx, zitadel.New(endpoint, opts...), client.WithAuth(client.PAT(pat)))
+			authority := endpoint
+			if externalDomain != "" {
+				authority = externalDomain
+			}
+
+			log.Info("connecting to zitadel", "endpoint", endpoint, "port", port, "insecure", insecure, "skipVerifyTLS", skipVerifyTLS, "externalDomain", externalDomain)
+
+			zitadelClient, err := client.New(ctx, zitadel.New(endpoint, opts...), client.WithAuth(client.PAT(pat)), client.WithGRPCDialOptions(grpc.WithAuthority(authority)))
 			if err != nil {
 				return fmt.Errorf("unable to create API client: %w", err)
 			}
