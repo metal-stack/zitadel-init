@@ -134,6 +134,11 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("unable to create API client: %w", err)
 			}
+			defer func() {
+				if err := zitadelClient.Close(); err != nil {
+					log.Error("unable to close zitadel client", "error", err)
+				}
+			}()
 
 			initRunner := NewInitRunner(log, config, zitadelConfig, zitadelClient, kclient)
 			err = initRunner.Run(ctx)
