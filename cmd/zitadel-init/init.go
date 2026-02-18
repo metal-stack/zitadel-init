@@ -38,7 +38,6 @@ type (
 		pat        string
 		namespace  string
 		secretName string
-		endpoint   string
 	}
 
 	zitadelConfig struct {
@@ -77,7 +76,11 @@ func New(log *slog.Logger, configPath string) (*zitadelConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to open config file at %s: %w", configPath, err)
 	}
-	defer configFile.Close()
+	defer func() {
+		if err := configFile.Close(); err != nil {
+			log.Error("unable to close config file", "error", err)
+		}
+	}()
 
 	configData, err := io.ReadAll(configFile)
 	if err != nil {
