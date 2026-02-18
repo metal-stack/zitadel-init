@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
+	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/admin"
 	app "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/application/v2"
+	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/idp"
 	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/org/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/project/v2"
 	zitadeluser "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
@@ -17,46 +19,55 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-type initRunner struct {
-	log           *slog.Logger
-	cfg           *config
-	zitadelConfig *zitadelConfig
-	zitadelClient *client.Client
-	kclient       ctrlclient.Client
-}
+type (
+	initRunner struct {
+		log           *slog.Logger
+		cfg           *config
+		zitadelConfig *zitadelConfig
+		zitadelClient *client.Client
+		kclient       ctrlclient.Client
+	}
 
-type config struct {
-	pat        string
-	namespace  string
-	secretName string
-}
+	config struct {
+		pat        string
+		namespace  string
+		secretName string
+	}
 
-type zitadelConfig struct {
-	StaticUsers []user `json:"static_users"`
-	Project     struct {
-		Id   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"project"`
-	Application struct {
-		Id          string `json:"id"`
-		Name        string `json:"name"`
-		RedirectUri string `json:"redirect_uri"`
-	} `json:"application"`
-}
+	zitadelConfig struct {
+		StaticUsers []user `json:"static_users"`
+		Project     struct {
+			Id   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"project"`
+		Application struct {
+			Id          string `json:"id"`
+			Name        string `json:"name"`
+			RedirectUri string `json:"redirect_uri"`
+		} `json:"application"`
+		GenericOIDCProviders []genericOIDCProviders `json:"generic_oidc_providers"`
+	}
 
-type user struct {
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-}
+	user struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Email     string `json:"email"`
+		Password  string `json:"password"`
+	}
+
+	genericOIDCProviders struct {
+		Name         string `json:"name"`
+		Issuer       string `json:"issuer"`
+		ClientId     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+	}
+)
 
 func New(log *slog.Logger, configPath string) (*zitadelConfig, error) {
 	log.Info("parsing config")
@@ -65,7 +76,11 @@ func New(log *slog.Logger, configPath string) (*zitadelConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to open config file at %s: %w", configPath, err)
 	}
-	defer configFile.Close()
+	defer func() {
+		if err := configFile.Close(); err != nil {
+			log.Error("unable to close config file", "error", err)
+		}
+	}()
 
 	configData, err := io.ReadAll(configFile)
 	if err != nil {
@@ -114,6 +129,11 @@ func (i *initRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to create init users: %w", err)
 	}
 
+	err = i.createGenericOIDCProviders(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to create generic oidc providers: %w", err)
+	}
+
 	err = i.ensureSecret(ctx, clientId, clientSecret)
 	if err != nil {
 		return fmt.Errorf("unable to ensure secret: %w", err)
@@ -128,9 +148,11 @@ func (i *initRunner) createInitUsers(ctx context.Context, orgId string) error {
 	i.log.Info("creating init users")
 
 	for _, u := range i.zitadelConfig.StaticUsers {
+		i.log.Info("creating user", "user-id", u.Email)
+
 		_, err := i.zitadelClient.UserServiceV2().CreateUser(ctx, &zitadeluser.CreateUserRequest{
 			OrganizationId: orgId,
-			UserId:         ptr.To(u.Email),
+			UserId:         new(u.Email),
 			UserType: &zitadeluser.CreateUserRequest_Human_{
 				Human: &zitadeluser.CreateUserRequest_Human{
 					Profile: &zitadeluser.SetHumanProfile{
@@ -178,6 +200,88 @@ func (i *initRunner) createInitUsers(ctx context.Context, orgId string) error {
 	return nil
 }
 
+func (i *initRunner) createGenericOIDCProviders(ctx context.Context) error {
+	i.log.Info("creating generic oidc providers")
+
+	for _, g := range i.zitadelConfig.GenericOIDCProviders {
+		ps, err := i.zitadelClient.AdminService().ListProviders(ctx, &admin.ListProvidersRequest{
+			Queries: []*admin.ProviderQuery{
+				{
+					Query: &admin.ProviderQuery_IdpNameQuery{
+						IdpNameQuery: &idp.IDPNameQuery{
+							Name: g.Name,
+						},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("unable to query generic oidc providers: %w", err)
+		}
+
+		var (
+			idpID string
+		)
+
+		switch len(ps.GetResult()) {
+		case 0:
+			i.log.Info("creating generic oidc provider", "name", g.Name)
+
+			idp, err := i.zitadelClient.AdminService().AddGenericOIDCProvider(ctx, &admin.AddGenericOIDCProviderRequest{
+				Name:         g.Name,
+				Issuer:       g.Issuer,
+				ClientId:     g.ClientId,
+				ClientSecret: g.ClientSecret,
+				// Scopes:           []string{},
+				ProviderOptions: &idp.Options{},
+				// IsIdTokenMapping: false,
+				// UsePkce:          false,
+			})
+			if err != nil {
+				return fmt.Errorf("unable to add generic oidc provider %s: %w", g.Name, err)
+			}
+
+			idpID = idp.GetId()
+		case 1:
+			i.log.Info("updating generic oidc provider", "name", g.Name)
+
+			idpID = ps.GetResult()[0].Id
+
+			_, err := i.zitadelClient.AdminService().UpdateGenericOIDCProvider(ctx, &admin.UpdateGenericOIDCProviderRequest{
+				Id:           idpID,
+				Name:         g.Name,
+				Issuer:       g.Issuer,
+				ClientId:     g.ClientId,
+				ClientSecret: g.ClientSecret,
+				// Scopes:           []string{},
+				ProviderOptions: &idp.Options{},
+				// IsIdTokenMapping: false,
+				// UsePkce:          false,
+			})
+			if err != nil {
+				return fmt.Errorf("unable to update generic oidc provider %s: %w", g.Name, err)
+			}
+		default:
+			return fmt.Errorf("multiple providers already exist for name %s", g.Name)
+		}
+
+		_, err = i.zitadelClient.AdminService().AddIDPToLoginPolicy(ctx, &admin.AddIDPToLoginPolicyRequest{
+			IdpId: idpID,
+		})
+		if err != nil {
+			if status.Code(err) != codes.AlreadyExists {
+				return fmt.Errorf("unable to activate generic oidc project: %w", err)
+			}
+
+			i.log.Info("skipping activation of generic oidc provider, because already active")
+		}
+	}
+
+	i.log.Info("successfully created generic oidc providers")
+
+	return nil
+}
+
 func (i *initRunner) getDefaultOrg(ctx context.Context) (string, error) {
 	orgResp, err := i.zitadelClient.OrganizationServiceV2().ListOrganizations(ctx, &org.ListOrganizationsRequest{
 		Queries: []*org.SearchQuery{
@@ -199,6 +303,8 @@ func (i *initRunner) getDefaultOrg(ctx context.Context) (string, error) {
 }
 
 func (i *initRunner) ensureProject(ctx context.Context, orgId string) error {
+	i.log.Info("creating project", "name", i.zitadelConfig.Project.Name)
+
 	_, err := i.zitadelClient.ProjectServiceV2().CreateProject(ctx, &project.CreateProjectRequest{
 		OrganizationId: orgId,
 		ProjectId:      &i.zitadelConfig.Project.Id,
