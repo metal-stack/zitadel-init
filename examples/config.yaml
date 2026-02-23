@@ -20,3 +20,5 @@ generic_oidc_providers:
     issuer: issuer
     client_id: client-id
     client_secret: client-secret
+    is_auto_create: true
+    is_auto_update: true

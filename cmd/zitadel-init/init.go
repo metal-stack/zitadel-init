@@ -66,6 +66,8 @@ type (
 		Issuer       string `json:"issuer"`
 		ClientId     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
+		IsAutoCreate bool   `json:"is_auto_create"`
+		IsAutoUpdate bool   `json:"is_auto_update"`
 	}
 )
 
@@ -233,7 +235,10 @@ func (i *initRunner) createGenericOIDCProviders(ctx context.Context) error {
 				ClientId:     g.ClientId,
 				ClientSecret: g.ClientSecret,
 				// Scopes:           []string{},
-				ProviderOptions: &idp.Options{},
+				ProviderOptions: &idp.Options{
+					IsAutoCreation: g.IsAutoCreate,
+					IsAutoUpdate:   g.IsAutoUpdate,
+				},
 				// IsIdTokenMapping: false,
 				// UsePkce:          false,
 			})
@@ -254,7 +259,10 @@ func (i *initRunner) createGenericOIDCProviders(ctx context.Context) error {
 				ClientId:     g.ClientId,
 				ClientSecret: g.ClientSecret,
 				// Scopes:           []string{},
-				ProviderOptions: &idp.Options{},
+				ProviderOptions: &idp.Options{
+					IsAutoCreation: g.IsAutoCreate,
+					IsAutoUpdate:   g.IsAutoUpdate,
+				},
 				// IsIdTokenMapping: false,
 				// UsePkce:          false,
 			})
