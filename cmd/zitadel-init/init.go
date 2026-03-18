@@ -424,15 +424,30 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 }
 
 func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret string) error {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      i.cfg.secretName,
-			Namespace: i.cfg.namespace,
-		},
-	}
+	var (
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      i.cfg.secretName,
+				Namespace: i.cfg.namespace,
+			},
+		}
+
+		regenerateSecret = func() (string, error) {
+			resp, err := i.zitadelClient.ApplicationServiceV2().GenerateClientSecret(ctx, &app.GenerateClientSecretRequest{
+				ProjectId:     i.zitadelConfig.Project.Id,
+				ApplicationId: i.zitadelConfig.Application.Id,
+			})
+			if err != nil {
+				return "", fmt.Errorf("unable to regenerate client secret: %w", err)
+			}
+
+			return resp.ClientSecret, nil
+		}
+	)
 
 	_, err := controllerutil.CreateOrUpdate(ctx, i.kclient, secret, func() error {
 		secret.Type = corev1.SecretTypeOpaque
+
 		if clientSecret != "" {
 			secret.StringData = map[string]string{
 				"client_id":     clientId,
@@ -441,17 +456,21 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret st
 			return nil
 		}
 
-		if secret.Data == nil || len(secret.Data["client_secret"]) == 0 {
-			i.log.Info("regenerating client secret")
-			resp, err := i.zitadelClient.ApplicationServiceV2().GenerateClientSecret(ctx, &app.GenerateClientSecretRequest{
-				ProjectId:     i.zitadelConfig.Project.Id,
-				ApplicationId: i.zitadelConfig.Application.Id,
-			})
-			if err != nil {
-				return fmt.Errorf("unable to regenerate client secret: %w", err)
-			}
+		switch {
+		case secret.Data == nil:
+			break
+		case len(secret.Data["client_id"]) == 0 || len(secret.Data["client_secret"]) == 0:
+			break
+		default:
+			i.log.Info("client secret already populated, no need for regeneration")
+			return nil
+		}
 
-			clientSecret = resp.ClientSecret
+		i.log.Info("regenerating client secret")
+
+		clientSecret, err := regenerateSecret()
+		if err != nil {
+			return err
 		}
 
 		secret.StringData = map[string]string{
