@@ -11,11 +11,11 @@ make zitadel-init
 ./bin/zitadel-init-linux-amd64 \
     --zitadel-endpoint=zitadel.172.17.0.1.nip.io \
     --zitadel-external-domain=zitadel.172.17.0.1.nip.io \
-    --zitadel-port=8080 \
+    --zitadel-port=4443 \
     --zitadel-pat=$(kubectl -n metal-control-plane get secrets iam-admin-pat -o jsonpath='{.data.pat}' | base64 -d ) \
     --namespace=metal-control-plane \
     --secret=zitadel-client-credentials \
     --zitadel-skip-verify-tls=True \
-    --zitadel-insecure=True \
+    --zitadel-insecure=False \
     --config-path=./examples/config.yaml
 ```
