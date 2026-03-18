@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
 	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/admin"
 	app "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/application/v2"
@@ -468,7 +467,7 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret st
 			return nil
 		}
 
-		i.log.Info("regenerating client secret", "content", spew.Sdump(secret))
+		i.log.Info("regenerating client secret")
 
 		clientSecret, err := regenerateSecret()
 		if err != nil {
