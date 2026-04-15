@@ -47,9 +47,9 @@ type (
 			Name string `json:"name"`
 		} `json:"project"`
 		Application struct {
-			Id          string `json:"id"`
-			Name        string `json:"name"`
-			RedirectUri string `json:"redirect_uri"`
+			Id           string   `json:"id"`
+			Name         string   `json:"name"`
+			RedirectUris []string `json:"redirect_uris"`
 		} `json:"application"`
 		GenericOIDCProviders []genericOIDCProviders `json:"generic_oidc_providers"`
 	}
@@ -338,9 +338,7 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 		ApplicationId: i.zitadelConfig.Application.Id,
 		ApplicationType: &app.CreateApplicationRequest_OidcConfiguration{
 			OidcConfiguration: &app.CreateOIDCApplicationRequest{
-				RedirectUris: []string{
-					i.zitadelConfig.Application.RedirectUri,
-				},
+				RedirectUris: i.zitadelConfig.Application.RedirectUris,
 				ResponseTypes: []app.OIDCResponseType{
 					app.OIDCResponseType_OIDC_RESPONSE_TYPE_CODE,
 				},
@@ -392,9 +390,7 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 			ApplicationId: i.zitadelConfig.Application.Id,
 			ApplicationType: &app.UpdateApplicationRequest_OidcConfiguration{
 				OidcConfiguration: &app.UpdateOIDCApplicationConfigurationRequest{
-					RedirectUris: []string{
-						i.zitadelConfig.Application.RedirectUri,
-					},
+					RedirectUris: i.zitadelConfig.Application.RedirectUris,
 				},
 			},
 		})
@@ -418,6 +414,20 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 
 		clientId = oidc.GetClientId()
 		clientSecret = oidc.GetClientSecret()
+	}
+
+	_, err = i.zitadelClient.ApplicationServiceV2().UpdateApplication(ctx, &app.UpdateApplicationRequest{
+		ApplicationId: i.zitadelConfig.Application.Id,
+		ProjectId:     i.zitadelConfig.Project.Id,
+		ApplicationType: &app.UpdateApplicationRequest_OidcConfiguration{
+			OidcConfiguration: &app.UpdateOIDCApplicationConfigurationRequest{
+				// adds more information to the issued token
+				IdTokenUserinfoAssertion: new(true),
+			},
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("unable to upodate application: %w", err)
 	}
 
 	return clientId, clientSecret, nil
