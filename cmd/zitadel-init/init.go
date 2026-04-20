@@ -47,8 +47,10 @@ type (
 			Name string `json:"name"`
 		} `json:"project"`
 		Application struct {
-			Id           string   `json:"id"`
-			Name         string   `json:"name"`
+			Id   string `json:"id"`
+			Name string `json:"name"`
+			// Deprecated: Use RedirectUris instead, this is for now added to the slice to ensure backward compatibility
+			RedirectUri  string   `json:"redirect_uri"`
 			RedirectUris []string `json:"redirect_uris"`
 		} `json:"application"`
 		GenericOIDCProviders []genericOIDCProviders `json:"generic_oidc_providers"`
@@ -332,13 +334,18 @@ func (i *initRunner) ensureProject(ctx context.Context, orgId string) error {
 }
 
 func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecret string, err error) {
+	redirectURIs := i.zitadelConfig.Application.RedirectUris
+	if i.zitadelConfig.Application.RedirectUri != "" {
+		redirectURIs = append(redirectURIs, i.zitadelConfig.Application.RedirectUri)
+	}
+
 	resp, err := i.zitadelClient.ApplicationServiceV2().CreateApplication(ctx, &app.CreateApplicationRequest{
 		ProjectId:     i.zitadelConfig.Project.Id,
 		Name:          i.zitadelConfig.Application.Name,
 		ApplicationId: i.zitadelConfig.Application.Id,
 		ApplicationType: &app.CreateApplicationRequest_OidcConfiguration{
 			OidcConfiguration: &app.CreateOIDCApplicationRequest{
-				RedirectUris: i.zitadelConfig.Application.RedirectUris,
+				RedirectUris: redirectURIs,
 				ResponseTypes: []app.OIDCResponseType{
 					app.OIDCResponseType_OIDC_RESPONSE_TYPE_CODE,
 				},
@@ -390,7 +397,7 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 			ApplicationId: i.zitadelConfig.Application.Id,
 			ApplicationType: &app.UpdateApplicationRequest_OidcConfiguration{
 				OidcConfiguration: &app.UpdateOIDCApplicationConfigurationRequest{
-					RedirectUris: i.zitadelConfig.Application.RedirectUris,
+					RedirectUris: redirectURIs,
 				},
 			},
 		})
