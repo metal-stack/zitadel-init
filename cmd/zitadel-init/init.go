@@ -427,7 +427,9 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 		},
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("unable to upodate application: %w", err)
+		if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "No changes") {
+			return "", "", fmt.Errorf("unable to update application: %w", err)
+		}
 	}
 
 	return clientId, clientSecret, nil
