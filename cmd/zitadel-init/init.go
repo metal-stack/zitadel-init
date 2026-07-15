@@ -360,7 +360,7 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 		},
 	})
 	if err != nil {
-		if status.Code(err) != codes.FailedPrecondition {
+		if status.Code(err) != codes.AlreadyExists && status.Code(err) != codes.FailedPrecondition {
 			return "", "", fmt.Errorf("unable to create application: %w", err)
 		}
 
