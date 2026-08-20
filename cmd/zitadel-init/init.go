@@ -38,9 +38,10 @@ type (
 	}
 
 	config struct {
-		pat        string
-		namespace  string
-		secretName string
+		pat               string
+		namespace         string
+		secretName        string
+		actionsSecretName string
 	}
 
 	zitadelConfig struct {
@@ -152,9 +153,14 @@ func (i *initRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to ensure actions target: %w", err)
 	}
 
-	err = i.ensureSecret(ctx, clientId, clientSecret, targetID, signingKey)
+	err = i.ensureSecret(ctx, clientId, clientSecret)
 	if err != nil {
 		return fmt.Errorf("unable to ensure secret: %w", err)
+	}
+
+	err = i.ensureActionsTargetSecret(ctx, targetID, signingKey)
+	if err != nil {
+		return fmt.Errorf("unable to ensure actions target secret: %w", err)
 	}
 
 	i.log.Info("successfully initialized zitadel")
@@ -509,7 +515,7 @@ func (i *initRunner) ensureActionsTarget(ctx context.Context) (targetID, signing
 	}
 }
 
-func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret, targetID, signingKey string) error {
+func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret string) error {
 	var (
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -535,7 +541,10 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret, t
 		secret.Type = corev1.SecretTypeOpaque
 
 		if clientSecret != "" {
-			secret.StringData = i.secretData(clientId, clientSecret, targetID, signingKey)
+			secret.StringData = map[string]string{
+				"client_id":     clientId,
+				"client_secret": clientSecret,
+			}
 
 			return nil
 		}
@@ -557,7 +566,10 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret, t
 			return err
 		}
 
-		secret.StringData = i.secretData(clientId, clientSecret, targetID, signingKey)
+		secret.StringData = map[string]string{
+			"client_id":     clientId,
+			"client_secret": clientSecret,
+		}
 
 		return nil
 	})
@@ -568,18 +580,38 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret, t
 	return nil
 }
 
-// secretData builds the StringData for the credentials secret, adding the
-// actions target id and signing key only if an actions target was configured.
-func (i *initRunner) secretData(clientId, clientSecret, targetID, signingKey string) map[string]string {
-	data := map[string]string{
-		"client_id":     clientId,
-		"client_secret": clientSecret,
+// ensureActionsTargetSecret writes the actions target id and signing key into a
+// dedicated secret. The id and key belong together; if only one of them is set
+// the caller made an error and we surface it instead of writing partial data.
+func (i *initRunner) ensureActionsTargetSecret(ctx context.Context, targetID, signingKey string) error {
+	if targetID == "" && signingKey == "" {
+		i.log.Info("no actions target configured, skipping actions secret")
+		return nil
 	}
 
-	if targetID != "" && signingKey != "" {
-		data["target_id"] = targetID
-		data["signing_key"] = signingKey
+	if targetID == "" || signingKey == "" {
+		return fmt.Errorf("actions target partially configured: target_id=%q signing_key=%q", targetID, signingKey)
 	}
 
-	return data
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      i.cfg.actionsSecretName,
+			Namespace: i.cfg.namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, i.kclient, secret, func() error {
+		secret.Type = corev1.SecretTypeOpaque
+		secret.StringData = map[string]string{
+			"target_id":   targetID,
+			"signing_key": signingKey,
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("unable to save actions target in secret: %w", err)
+	}
+
+	return nil
 }
