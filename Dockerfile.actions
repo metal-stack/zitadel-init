@@ -1,0 +1,4 @@
+FROM alpine:3.23
+LABEL maintainer="metal-stack authors <info@metal-stack.io>"
+COPY bin/zitadel-actions-linux-amd64 /zitadel-actions
+ENTRYPOINT ["/zitadel-actions"]

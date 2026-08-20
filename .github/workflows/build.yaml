@@ -16,8 +16,16 @@ jobs:
   draft:
     uses: metal-stack/actions-common/.github/workflows/release-drafter.yaml@v1
 
-  go-build:
+  go-build-init:
     uses: metal-stack/actions-common/.github/workflows/go-build.yaml@v1
     secrets: inherit
     with:
+      dockerfile: Dockerfile
       build-command: make zitadel-init
+
+  go-build-actions:
+    uses: metal-stack/actions-common/.github/workflows/go-build.yaml@v1
+    secrets: inherit
+    with:
+      dockerfile: Dockerfile.action
+      build-command: make zitadel-actions

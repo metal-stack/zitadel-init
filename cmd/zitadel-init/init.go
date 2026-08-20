@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
+	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/action/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/admin"
 	app "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/application/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/idp"
@@ -17,6 +19,7 @@ import (
 	zitadeluser "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,6 +57,7 @@ type (
 			RedirectUris []string `json:"redirect_uris"`
 		} `json:"application"`
 		GenericOIDCProviders []genericOIDCProviders `json:"generic_oidc_providers"`
+		ActionsTarget        actionsTarget          `json:"actions_target"`
 	}
 
 	user struct {
@@ -70,6 +74,11 @@ type (
 		ClientSecret string `json:"client_secret"`
 		IsAutoCreate bool   `json:"is_auto_create"`
 		IsAutoUpdate bool   `json:"is_auto_update"`
+	}
+
+	actionsTarget struct {
+		Name     string `json:"name"`
+		Endpoint string `json:"endpoint"`
 	}
 )
 
@@ -138,7 +147,12 @@ func (i *initRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to create generic oidc providers: %w", err)
 	}
 
-	err = i.ensureSecret(ctx, clientId, clientSecret)
+	targetID, signingKey, err := i.ensureActionsTarget(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to ensure actions target: %w", err)
+	}
+
+	err = i.ensureSecret(ctx, clientId, clientSecret, targetID, signingKey)
 	if err != nil {
 		return fmt.Errorf("unable to ensure secret: %w", err)
 	}
@@ -442,7 +456,60 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 	return clientId, clientSecret, nil
 }
 
-func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret string) error {
+func (i *initRunner) ensureActionsTarget(ctx context.Context) (targetID, signingKey string, err error) {
+	if i.zitadelConfig.ActionsTarget.Name == "" {
+		i.log.Info("no actions target configured, skipping")
+		return "", "", nil
+	}
+
+	i.log.Info("ensuring actions target", "name", i.zitadelConfig.ActionsTarget.Name)
+
+	resp, err := i.zitadelClient.ActionServiceV2().ListTargets(ctx, &action.ListTargetsRequest{
+		Filters: []*action.TargetSearchFilter{
+			{
+				Filter: &action.TargetSearchFilter_TargetNameFilter{
+					TargetNameFilter: &action.TargetNameFilter{
+						TargetName: i.zitadelConfig.ActionsTarget.Name,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("unable to list actions targets: %w", err)
+	}
+
+	switch len(resp.Targets) {
+	case 0:
+		i.log.Info("creating actions target", "endpoint", i.zitadelConfig.ActionsTarget.Endpoint)
+
+		createResp, err := i.zitadelClient.ActionServiceV2().CreateTarget(ctx, &action.CreateTargetRequest{
+			Name: i.zitadelConfig.ActionsTarget.Name,
+			TargetType: &action.CreateTargetRequest_RestCall{
+				RestCall: &action.RESTCall{
+					InterruptOnError: true,
+				},
+			},
+			Timeout:  durationpb.New(10 * time.Second),
+			Endpoint: i.zitadelConfig.ActionsTarget.Endpoint,
+		})
+		if err != nil {
+			return "", "", fmt.Errorf("unable to create actions target: %w", err)
+		}
+
+		i.log.Info("successfully created actions target", "target-id", createResp.Id)
+
+		return createResp.Id, createResp.SigningKey, nil
+	case 1:
+		i.log.Info("actions target already exists, using existing signing key")
+
+		return resp.Targets[0].Id, resp.Targets[0].SigningKey, nil
+	default:
+		return "", "", fmt.Errorf("multiple actions targets already exist for name %s", i.zitadelConfig.ActionsTarget.Name)
+	}
+}
+
+func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret, targetID, signingKey string) error {
 	var (
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -468,10 +535,7 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret st
 		secret.Type = corev1.SecretTypeOpaque
 
 		if clientSecret != "" {
-			secret.StringData = map[string]string{
-				"client_id":     clientId,
-				"client_secret": clientSecret,
-			}
+			secret.StringData = i.secretData(clientId, clientSecret, targetID, signingKey)
 
 			return nil
 		}
@@ -493,10 +557,7 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret st
 			return err
 		}
 
-		secret.StringData = map[string]string{
-			"client_id":     clientId,
-			"client_secret": clientSecret,
-		}
+		secret.StringData = i.secretData(clientId, clientSecret, targetID, signingKey)
 
 		return nil
 	})
@@ -505,4 +566,20 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret st
 	}
 
 	return nil
+}
+
+// secretData builds the StringData for the credentials secret, adding the
+// actions target id and signing key only if an actions target was configured.
+func (i *initRunner) secretData(clientId, clientSecret, targetID, signingKey string) map[string]string {
+	data := map[string]string{
+		"client_id":     clientId,
+		"client_secret": clientSecret,
+	}
+
+	if targetID != "" && signingKey != "" {
+		data["target_id"] = targetID
+		data["signing_key"] = signingKey
+	}
+
+	return data
 }

@@ -23,3 +23,6 @@ generic_oidc_providers:
     client_secret: client-secret
     is_auto_create: true
     is_auto_update: true
+actions_target:
+  name: zitadel-actions
+  endpoint: http://localhost:8443

@@ -1,6 +1,6 @@
 module github.com/metal-stack/zitadel-init
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/urfave/cli/v3 v3.10.1
