@@ -29,3 +29,4 @@ jobs:
     with:
       dockerfile: Dockerfile.actions
       build-command: make zitadel-actions
+      image-name: ${{ github.repository_owner }}/zitadel-actions
