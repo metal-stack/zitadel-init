@@ -585,13 +585,14 @@ func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret st
 			return nil
 		}
 
-		switch {
-		case secret.Data == nil:
-			break
-		case len(secret.Data["client_id"]) == 0 || len(secret.Data["client_secret"]) == 0:
-			break
-		default:
-			i.log.Info("client secret already populated, no need for regeneration")
+		if secret.Data != nil && len(secret.Data["client_secret"]) > 0 {
+			secret.StringData = map[string]string{
+				"client_id":     clientId,
+				"client_secret": string(secret.Data["client_secret"]),
+			}
+
+			i.log.Info("client secret kept, client id synced to current application")
+
 			return nil
 		}
 
