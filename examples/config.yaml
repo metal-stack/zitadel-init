@@ -25,4 +25,5 @@ generic_oidc_providers:
     is_auto_update: true
 actions_target:
   name: zitadel-actions
-  endpoint: http://localhost:8443
+  endpoint: http://zitadel-actions:8443
+  function: preuserinfo

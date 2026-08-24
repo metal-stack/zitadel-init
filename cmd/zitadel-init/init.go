@@ -80,6 +80,7 @@ type (
 	actionsTarget struct {
 		Name     string `json:"name"`
 		Endpoint string `json:"endpoint"`
+		Function string `json:"function"`
 	}
 )
 
@@ -151,6 +152,11 @@ func (i *initRunner) Run(ctx context.Context) error {
 	targetID, signingKey, err := i.ensureActionsTarget(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to ensure actions target: %w", err)
+	}
+
+	err = i.ensureActionsExecution(ctx, targetID)
+	if err != nil {
+		return fmt.Errorf("unable to ensure actions execution: %w", err)
 	}
 
 	err = i.ensureSecret(ctx, clientId, clientSecret)
@@ -513,6 +519,36 @@ func (i *initRunner) ensureActionsTarget(ctx context.Context) (targetID, signing
 	default:
 		return "", "", fmt.Errorf("multiple actions targets already exist for name %s", i.zitadelConfig.ActionsTarget.Name)
 	}
+}
+
+func (i *initRunner) ensureActionsExecution(ctx context.Context, targetID string) error {
+	if targetID == "" {
+		i.log.Info("no actions target configured, skipping execution")
+		return nil
+	}
+
+	function := i.zitadelConfig.ActionsTarget.Function
+	if function == "" {
+		function = "preuserinfo"
+	}
+
+	i.log.Info("ensuring actions execution", "function", function, "target-id", targetID)
+
+	_, err := i.zitadelClient.ActionServiceV2().SetExecution(ctx, &action.SetExecutionRequest{
+		Condition: &action.Condition{
+			ConditionType: &action.Condition_Function{
+				Function: &action.FunctionExecution{Name: function},
+			},
+		},
+		Targets: []string{targetID},
+	})
+	if err != nil {
+		return fmt.Errorf("unable to set actions execution for function %s: %w", function, err)
+	}
+
+	i.log.Info("successfully ensured actions execution", "function", function)
+
+	return nil
 }
 
 func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret string) error {
