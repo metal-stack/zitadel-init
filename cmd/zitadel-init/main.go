@@ -56,6 +56,11 @@ var (
 		Value: "zitadel-client-credentials",
 		Usage: "namespace for the client secret",
 	}
+	actionsSecretName = &cli.StringFlag{
+		Name:  "actions-secret",
+		Value: "zitadel-actions-credentials",
+		Usage: "name of the secret holding the actions target id and signing key",
+	}
 	configPath = &cli.StringFlag{
 		Name:  "config-path",
 		Value: "",
@@ -78,6 +83,7 @@ func main() {
 			zitadelExternalDomain,
 			secretNamespace,
 			secretName,
+			actionsSecretName,
 			configPath,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -89,6 +95,7 @@ func main() {
 				insecure       = c.Bool(zitadelInsecure.Name)
 				namespace      = c.String(secretNamespace.Name)
 				secretName     = c.String(secretName.Name)
+				actionsSecret  = c.String(actionsSecretName.Name)
 				pat            = c.String(zitadelPAT.Name)
 				configPath     = c.String(configPath.Name)
 
@@ -101,9 +108,10 @@ func main() {
 			}
 
 			config := &config{
-				pat:        pat,
-				namespace:  namespace,
-				secretName: secretName,
+				pat:               pat,
+				namespace:         namespace,
+				secretName:        secretName,
+				actionsSecretName: actionsSecret,
 			}
 
 			k8sConfig, err := ctrlconfig.GetConfig()

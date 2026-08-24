@@ -1,6 +1,7 @@
 GOOS := linux
 GOARCH := amd64
 BINARY := zitadel-init-$(GOOS)-$(GOARCH)
+ACTIONS_BINARY := zitadel-actions-$(GOOS)-$(GOARCH)
 TAGS := -tags 'netgo'
 SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)
@@ -19,7 +20,7 @@ LINKMODE := $(LINKMODE) \
 		 -X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
 		 -X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'
 
-all: zitadel-init
+all: zitadel-init zitadel-actions
 
 .PHONY: zitadel-init
 zitadel-init:
@@ -30,6 +31,16 @@ zitadel-init:
 		-o bin/$(BINARY) \
 		github.com/metal-stack/zitadel-init/cmd/zitadel-init
 	strip bin/$(BINARY)
+
+.PHONY: zitadel-actions
+zitadel-actions:
+	go build \
+		$(TAGS) \
+		-ldflags \
+		"$(LINKMODE)" \
+		-o bin/$(ACTIONS_BINARY) \
+		github.com/metal-stack/zitadel-init/cmd/zitadel-actions
+	strip bin/$(ACTIONS_BINARY)
 
 .PHONY: golint
 golint:
