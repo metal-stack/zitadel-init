@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -445,10 +444,8 @@ func (i *initRunner) ensureApp(ctx context.Context) (clientId string, clientSecr
 func (i *initRunner) ensureSecret(ctx context.Context, clientId, clientSecret string) error {
 	var (
 		secret = &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      i.cfg.secretName,
-				Namespace: i.cfg.namespace,
-			},
+			Name:      i.cfg.secretName,
+			Namespace: i.cfg.namespace,
 		}
 
 		regenerateSecret = func() (string, error) {
